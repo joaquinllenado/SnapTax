@@ -131,6 +131,12 @@ function releaseReservation(keys: string[]): void {
   for (const key of keys) inFlight.delete(key);
 }
 
+function clearProcessedDedupe(keys: string[]): void {
+  for (const key of keys) {
+    processed.delete(key);
+  }
+}
+
 export function getReceiptProcessingSnapshot(): {
   activeCount: number;
   lastProcessingStartedAt: string | null;
@@ -220,6 +226,8 @@ export async function processMessageReceipt(input: {
   if (await hasPersistedMessageGuid(input.message.guid).catch(() => false)) {
     return { status: "ignored", reason: "already_persisted" };
   }
+  // If persistence was wiped (e.g. demo reset), allow the same message/image to be reprocessed.
+  clearProcessedDedupe(keys);
   if (!reserveForProcessing(keys)) {
     return { status: "ignored", reason: "duplicate_image" };
   }
@@ -353,7 +361,6 @@ export async function findLatestReceiptImageMessage(
   const nextUnprocessed = sorted.find((m) => {
     if (!m.attachments.some((a) => isImageAttachment(a))) return false;
     if (persistedGuids.has(m.guid)) return false;
-    if (processed.has(`msg:${m.guid}`)) return false;
     if (inFlight.has(`msg:${m.guid}`)) return false;
     return true;
   });
