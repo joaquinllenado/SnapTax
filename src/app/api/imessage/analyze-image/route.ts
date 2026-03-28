@@ -4,7 +4,6 @@ import { getIMessageSDK, getSessionFromRequest } from "@/lib/imessage";
 import {
   findLatestReceiptImageMessage,
   processMessageReceipt,
-  RECEIPT_PHONE_NUMBER,
 } from "@/lib/receipt-processing";
 import { normalizeChatIdForMessageQuery } from "@/lib/imessage-chat-id";
 import { ensureReceiptWatcherStarted } from "@/lib/receipt-watcher";
@@ -31,14 +30,15 @@ export async function POST(request: NextRequest) {
   }
 
   const chatId = body.chatId?.trim();
+  const configuredPhone = session.phone;
   if (chatId) {
     const requested = normalizeChatIdForMessageQuery(chatId).queryChatId;
-    const configured = normalizeChatIdForMessageQuery(RECEIPT_PHONE_NUMBER).queryChatId;
+    const configured = normalizeChatIdForMessageQuery(configuredPhone).queryChatId;
     if (requested !== configured) {
       return NextResponse.json(
         {
-          error: `Receipt processing is fixed to ${RECEIPT_PHONE_NUMBER}.`,
-          configuredPhone: RECEIPT_PHONE_NUMBER,
+          error: `Receipt processing is scoped to your signed-in phone (${configuredPhone}).`,
+          configuredPhone,
         },
         { status: 400 },
       );
@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
     }
 
     const sdk = getIMessageSDK();
-    let target = await findLatestReceiptImageMessage(sdk);
+    let target = await findLatestReceiptImageMessage(sdk, configuredPhone);
 
     if (body.messageGuid?.trim()) {
-      const normalized = normalizeChatIdForMessageQuery(RECEIPT_PHONE_NUMBER);
+      const normalized = normalizeChatIdForMessageQuery(configuredPhone);
       const { messages } = await sdk.getMessages({
         limit: 100,
         chatId: normalized.queryChatId,
@@ -71,8 +71,8 @@ export async function POST(request: NextRequest) {
     if (!target) {
       return NextResponse.json(
         {
-          error: "No new unprocessed image attachment found for the configured receipt number.",
-          configuredPhone: RECEIPT_PHONE_NUMBER,
+          error: "No new unprocessed image attachment found for your configured phone number.",
+          configuredPhone,
         },
         { status: 404 },
       );
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         {
           error: "Latest receipt image was already processed.",
           reason: result.reason,
-          configuredPhone: RECEIPT_PHONE_NUMBER,
+          configuredPhone,
         },
         { status: 409 },
       );
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       replied: result.replied,
       imageUrl: result.imageUrl,
       uploadWarning: result.uploadError,
-      configuredPhone: RECEIPT_PHONE_NUMBER,
+      configuredPhone,
     });
   } catch (error) {
     const message =

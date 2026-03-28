@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getIMessageSDK, getSessionFromRequest } from "@/lib/imessage";
-import { RECEIPT_PHONE_NUMBER } from "@/lib/receipt-processing";
 
 export async function GET(request: NextRequest) {
   const session = getSessionFromRequest(request);
@@ -11,17 +10,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const configuredPhone = session.phone;
     const sdk = getIMessageSDK();
     const chats = await sdk.listChats({ sortBy: "recent", limit: 50 });
     const target =
-      chats.find((chat) => chat.chatId.includes(RECEIPT_PHONE_NUMBER)) ?? null;
+      chats.find((chat) => chat.chatId.includes(configuredPhone)) ?? null;
 
     const onlyReceiptChat = target
       ? [target]
       : [
           {
-            chatId: RECEIPT_PHONE_NUMBER,
-            displayName: RECEIPT_PHONE_NUMBER,
+            chatId: configuredPhone,
+            displayName: configuredPhone,
             isGroup: false,
             unreadCount: 0,
             lastMessageAt: null,
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
           ? chat.lastMessageAt.toISOString()
           : null,
       })),
-      configuredPhone: RECEIPT_PHONE_NUMBER,
+      configuredPhone,
     });
   } catch (error) {
     const message =

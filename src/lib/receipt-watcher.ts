@@ -1,5 +1,6 @@
 import { type Message } from "@photon-ai/imessage-kit";
 
+import { listActiveSessionPhones } from "@/lib/auth";
 import {
   isConfiguredReceiptMessage,
   isImageAttachment,
@@ -10,10 +11,15 @@ import { getIMessageSDK } from "@/lib/imessage";
 let watcherStarted = false;
 let watcherStartPromise: Promise<void> | null = null;
 
-function shouldProcessIncomingMessage(message: Message): boolean {
-  if (message.isReaction) return false;
-  if (!isConfiguredReceiptMessage(message)) return false;
-  return message.attachments.some((att) => isImageAttachment(att));
+function getMatchedSessionPhone(message: Message): string | null {
+  if (message.isReaction) return null;
+  if (!message.attachments.some((att) => isImageAttachment(att))) return null;
+
+  const activePhones = listActiveSessionPhones();
+  const matchedPhone = activePhones.find((phone) =>
+    isConfiguredReceiptMessage(message, phone),
+  );
+  return matchedPhone ?? null;
 }
 
 export async function ensureReceiptWatcherStarted(): Promise<void> {
@@ -25,7 +31,8 @@ export async function ensureReceiptWatcherStarted(): Promise<void> {
 
     await sdk.startWatching({
       onMessage: async (message) => {
-        if (!shouldProcessIncomingMessage(message)) return;
+        const matchedPhone = getMatchedSessionPhone(message);
+        if (!matchedPhone) return;
 
         try {
           await processMessageReceipt({ sdk, message, reply: true });

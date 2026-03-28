@@ -159,6 +159,11 @@ export function revokeSession(token: string | undefined): void {
   sessions.delete(token);
 }
 
+export function listActiveSessionPhones(): string[] {
+  cleanupExpiredRecords();
+  return [...new Set(Array.from(sessions.values(), (session) => session.phone))];
+}
+
 export function getSessionMaxAgeSeconds(): number {
   return Math.floor(SESSION_TTL_MS / 1000);
 }

@@ -11,8 +11,6 @@ import {
 import { normalizeChatIdForMessageQuery } from "@/lib/imessage-chat-id";
 import { uploadReceiptImageToR2 } from "@/lib/r2-upload";
 
-export const RECEIPT_PHONE_NUMBER = "+13036019144";
-
 const PROCESSED_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 type DedupeEntry = {
@@ -36,15 +34,18 @@ function toComparable(raw: string): string {
   return raw.replace(/^\+/, "").trim();
 }
 
-function isTargetChatId(chatId: string): boolean {
+function isTargetChatId(chatId: string, configuredPhone: string): boolean {
   const normalized = normalizeChatIdForMessageQuery(chatId).queryChatId;
-  return toComparable(normalized) === toComparable(RECEIPT_PHONE_NUMBER);
+  return toComparable(normalized) === toComparable(configuredPhone);
 }
 
-export function isConfiguredReceiptMessage(message: Message): boolean {
+export function isConfiguredReceiptMessage(
+  message: Message,
+  configuredPhone: string,
+): boolean {
   return (
-    toComparable(message.sender) === toComparable(RECEIPT_PHONE_NUMBER) ||
-    isTargetChatId(message.chatId)
+    toComparable(message.sender) === toComparable(configuredPhone) ||
+    isTargetChatId(message.chatId, configuredPhone)
   );
 }
 
@@ -334,8 +335,9 @@ export async function processMessageReceipt(input: {
 
 export async function findLatestReceiptImageMessage(
   sdk: IMessageSDK,
+  configuredPhone: string,
 ): Promise<Message | null> {
-  const normalized = normalizeChatIdForMessageQuery(RECEIPT_PHONE_NUMBER);
+  const normalized = normalizeChatIdForMessageQuery(configuredPhone);
   const baseQuery = { limit: 100, excludeOwnMessages: false } as const;
 
   const primary = await sdk.getMessages({
@@ -344,7 +346,7 @@ export async function findLatestReceiptImageMessage(
   });
 
   let messages = primary.messages;
-  if (normalized.queryChatId !== RECEIPT_PHONE_NUMBER) {
+  if (normalized.queryChatId !== configuredPhone) {
     const senderFallback = await sdk.getMessages({
       ...baseQuery,
       sender: normalized.queryChatId,

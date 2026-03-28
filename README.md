@@ -126,7 +126,7 @@ Optional:
 
 - Intended to run on **macOS** with iMessage access for Photon.
 - The watcher starts at app startup (instrumentation) and is reinforced on authenticated session checks.
-- Auto-processing is currently tied to one configured phone constant: `+13036019144` in `src/lib/receipt-processing.ts`.
+- Auto-processing uses the signed-in user's verified phone number (session-scoped).
 
 ## Data model (persisted)
 
@@ -152,7 +152,6 @@ The natural-language reply path rejects out-of-scope or risky prompts:
 
 - Session and verification state are in-memory (lost on server restart).
 - Auth is demo-oriented: the verification code may be returned in the API response.
-- Receipt auto-processing is fixed to a single configured number.
 - No multi-user tenant isolation beyond current tenant/sub-tenant configuration.
 - No background job queue; processing is request- and watcher-driven.
 
