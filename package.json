@@ -6,14 +6,29 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --import tsx --test src/lib/__tests__/*.test.ts",
+    "flux:login": "cd flux && ../node_modules/.bin/flux login",
+    "flux:validate": "cd flux && ../node_modules/.bin/flux validate",
+    "flux:local": "cd flux && ../node_modules/.bin/flux run --local",
+    "flux:prod": "cd flux && ../node_modules/.bin/flux run --prod"
   },
   "dependencies": {
+    "@hydra_db/node": "^0.1.1",
+    "@langchain/core": "^1.1.36",
+    "@langchain/openai": "^1.3.1",
+    "@photon-ai/imessage-kit": "^2.1.2",
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^17.3.1",
+    "langchain": "^1.2.37",
     "next": "16.2.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "sonner": "^2.0.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@photon-ai/flux": "^0.6.6",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -21,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

@@ -33,6 +33,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# Flux CLI (https://github.com/photon-hq/flux)
+credentials.json
+flux/credentials.json
+
 # vercel
 .vercel
 
