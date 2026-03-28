@@ -1,85 +1,169 @@
 # Snap Tax
 
-**Snap Tax** is a [Next.js](https://nextjs.org) app for logging receipts that arrive over **iMessage**: images are interpreted with **Kimi 2.5**, stored for the user, and surfaced in the UI. This repo is an MVP focused on the receipt path; routing, persistence, and a full transaction list are still being wired up (see [What's in the repo today](#whats-in-the-repo-today)).
+**Snap Tax is a web app that turns receipt photos you send in iMessage into a searchable expense ledger.** You sign in on the dashboard, forward or send receipts to a dedicated number, and each image is read by AI, stored, and shown as a transaction with totals, line items, and charts. You can also ask plain-language questions about your spending (for example totals over a time range), scoped to the receipts the app has saved.
 
-## What we're building
+No manual data entry for each line: the pipeline is built to run end-to-end from the message thread to persisted records and the UI.
 
-- Users send **receipt images over iMessage**.
-- **Photon** ([`@photon-ai/imessage-kit`](https://www.npmjs.com/package/@photon-ai/imessage-kit) for chat and attachments, [`@photon-ai/flux`](https://www.npmjs.com/package/@photon-ai/flux) for phone verification) lets the app talk to iMessage on the Mac side.
-- Images go to **Kimi 2.5** for **structured receipt extraction** (summary, extracted text, and key-value fields—see [`src/lib/kimi-agent.ts`](src/lib/kimi-agent.ts)).
-- **Goal:** log each extraction for the user and **show every processed transaction** on the frontend.
-- **MVP data plan:** persist **transaction records** in **HydraDB** using the official setup flow ([HydraDB Quickstart](https://docs.hydradb.com/quickstart)): API base `https://api.hydradb.com`, `Authorization: Bearer <api_key>`, tenant creation, then ingestion or user-memory APIs as we choose for searchable context.
-- **Dates:** each stored transaction should include **receipt or purchase date** when extraction provides it, plus a **processed / logged timestamp**, so the UI and future queries can filter by time (e.g. “last week”).
-- **Confirmation:** after a receipt is processed and logged, the app **texts the user back on iMessage** (same thread) so they know it was logged. Today this aligns with optional `reply` on the analyze-image API; copy can tighten once HydraDB writes are in place.
-- **Intake agent (routing):** incoming messages should eventually hit a single **intake agent** that picks the path: **(1) receipt extraction** (attachment → Kimi extract → HydraDB → confirmation) or **(2) LLM reply** (plaintext questions → model answer, optionally grounded with **HydraDB recall / Q&A** for spend questions). That avoids a separate ad hoc entry point per message type.
-- **Future (after MVP):** fully wire the **LLM reply** path for **plaintext** prompts (e.g. “How much did I spend last week?”). The **receipt** path remains the primary MVP focus.
+## How it works (simple)
 
-## Architecture (high level)
+1. You authenticate on the web app (phone verification).
+2. Receipt images arrive in a configured iMessage thread (via Photon on macOS).
+3. An AI model (Kimi) extracts structured fields: merchant, dates, amounts, tax, tip, payment method, line items, and related metadata.
+4. Each receipt is saved to HydraDB and the image file is stored in Cloudflare R2 (including HEIC handling where needed).
+5. The **Transactions** dashboard lists everything, shows analytics (totals, categories, trends), and offers guardrailed Q&A over your saved data.
+
+For developers and demos: the main receipt path is implemented in this repo—not a UI-only mock.
+
+## Why it exists
+
+Tax prep and expense tracking often fail because capturing receipts is slow and easy to skip. Snap Tax is aimed at people who already text photos of receipts: it turns that habit into an ongoing ledger instead of a year-end scramble.
+
+## What works in this codebase (March 2026)
+
+- Authenticated web app: `/login` → `/transactions`
+- Automatic receipt watcher for a configured iMessage thread
+- Manual **re-process latest receipt** from the dashboard
+- Normalized extraction into merchant, dates, totals, tax, tip, payment method, line items
+- HydraDB-backed storage and retrieval; R2 for receipt images
+- Dashboard analytics (totals, tax, category breakdown, trends)
+- Guardrailed natural-language Q&A for receipt/spend questions (`POST /api/imessage/reply`)
+
+## Demo flow (about 2–3 minutes)
+
+1. Start the app and sign in with a phone number in E.164 format.
+2. Send a receipt image to the configured receipt number.
+3. Watch processing status and a new row appear on `/transactions`.
+4. Open a transaction to see parsed fields and line items.
+5. Ask a spend question in the UI (for example: “How much did I spend last week?”).
+6. Confirm the answer is grounded in stored HydraDB data.
+
+Use **Re-process receipt** if you need to force the latest unprocessed image through again.
+
+## Architecture
 
 ```mermaid
-flowchart TB
-  user[User_iMessage]
-  photon[Photon]
-  intake[IntakeAgent]
-  extract[Kimi_receipt_extract]
-  llmPath[LLM_reply_optional_HydraDB_recall]
-  hydra[HydraDB]
-
-  user --> photon --> intake
-  intake -->|image_receipt| extract
-  intake -->|text_question| llmPath
-  extract --> hydra
-  extract -->|confirmation| user
-  llmPath -->|answer| user
+flowchart LR
+  U[User iMessage] --> P[Photon iMessage SDK]
+  P --> W[Receipt Watcher]
+  W --> X[Kimi Extraction Agent]
+  X --> H[HydraDB Memories]
+  X --> R[R2 Object Storage]
+  H --> D[Transactions API]
+  R --> I[Receipt Images API]
+  D --> UI[Dashboard /transactions]
+  I --> UI
+  UI --> Q[Query Endpoint]
+  Q --> H
 ```
 
-## HydraDB (planned)
+## Key routes
 
-Transaction context will live in **HydraDB** so we can **recall** it for agents and (later) natural-language questions. Follow [HydraDB Quickstart](https://docs.hydradb.com/quickstart) for API key, tenant, and ingestion. When integration lands, this app will use env vars such as `HYDRADB_API_KEY` and a tenant identifier—see `.env` or `.env.example` once those are added.
+App pages:
 
-## What's in the repo today
+- `/login` — phone verification sign-in
+- `/transactions` — receipts, analytics, and Q&A
 
-**HydraDB**, **dated transaction persistence**, **a unified intake router**, and a **full transaction list UI** are **targets**, not fully implemented yet. The app currently exposes **receipt analysis** through explicit APIs/UI (e.g. analyze latest image) rather than automatic per-message routing. **Outbound confirmation** via iMessage is available when using analyze-image with `reply` enabled. **Plaintext spend questions** and **HydraDB-backed recall** for the LLM path are **planned**.
+Core APIs:
 
-## API: Kimi image extraction
+- `POST /api/imessage/analyze-image` — process latest (or specified) receipt image
+- `GET /api/transactions` — transactions from HydraDB
+- `GET /api/receipt-images` — receipt image metadata
+- `GET /api/receipt-images/preview?key=...&mimeType=...` — preview/redirect (HEIC supported)
+- `POST /api/imessage/reply` — guardrailed receipt-domain Q&A via HydraDB
+- `GET /api/processing-status` — active processing status
 
-The app includes a Kimi-powered image extraction endpoint:
+Auth APIs:
 
-- `POST /api/kimi/extract-image`
-- Request body:
-  - `imageData`: required, either raw base64 or full data URL (`data:image/png;base64,...`)
-  - `mimeType`: optional when `imageData` is raw base64
-  - `prompt`: optional extraction context
-  - `model`: optional model override
-- Response body:
-  - `extraction.summary`
-  - `extraction.extractedText`
-  - `extraction.fields` (key-value map)
+- `POST /api/auth/request-code`
+- `POST /api/auth/verify-code`
+- `GET /api/auth/session`
+- `POST /api/auth/logout`
 
-Required env vars:
+Standalone extraction API:
 
-- `KIMI_API_KEY` (or fallback `GMI_API_KEY`)
-- Optional: `KIMI_BASE_URL`, `KIMI_MODEL` (default: `kimi-k2-5`)
+- `POST /api/kimi/extract-image` — direct image → structured JSON extraction
 
-Example:
+## Tech stack
+
+- Next.js 16 (App Router)
+- React 19
+- TypeScript
+- Photon iMessage SDK (`@photon-ai/imessage-kit`)
+- Kimi via LangChain `ChatOpenAI` interface
+- HydraDB for transaction memory and recall
+- Cloudflare R2 (S3-compatible API) for receipt images
+
+## Local setup
+
+### 1. Install and run
 
 ```bash
-curl -X POST http://localhost:3000/api/kimi/extract-image \
-  -H "Content-Type: application/json" \
-  -d '{
-    "imageData": "data:image/png;base64,<your-base64>",
-    "prompt": "Extract line items and totals"
-  }'
-```
-
-## Getting started
-
-```bash
+npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The home UI lives in [`src/app/page.tsx`](src/app/page.tsx).
+Open `http://localhost:3000`.
 
-## Learn more
+### 2. Required environment variables
 
-[Next.js documentation](https://nextjs.org/docs) · [Deploy on Vercel](https://vercel.com/new)
+Minimum for the full demo path:
+
+- `HYDRADB_API_KEY`
+- `GMI_API_KEY` or `KIMI_API_KEY`
+- `R2_BUCKET_URL`
+- `S3_API_URL`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+
+Optional:
+
+- `HYDRADB_TENANT_ID` (defaults to `snap-tax`)
+- `HYDRADB_SUB_TENANT_ID`
+- `KIMI_BASE_URL`, `KIMI_MODEL`
+- `R2_REGION` (defaults to `auto`)
+
+### 3. iMessage runtime notes
+
+- Intended to run on **macOS** with iMessage access for Photon.
+- The watcher starts at app startup (instrumentation) and is reinforced on authenticated session checks.
+- Auto-processing is currently tied to one configured phone constant: `+13036019144` in `src/lib/receipt-processing.ts`.
+
+## Data model (persisted)
+
+Each processed receipt is stored in HydraDB as a `snap_tax_receipt_v1` record with:
+
+- Message identifiers (`messageGuid`, `chatId`)
+- Summary text
+- Normalized receipt extraction payload
+- Processing timestamp (`processedAt`)
+- Optional uploaded image metadata (`key`, `url`, MIME type, size)
+
+The UI derives transaction views from these records.
+
+## Guardrails and scope
+
+The natural-language reply path rejects out-of-scope or risky prompts:
+
+- Only receipt/expense-domain questions are accepted
+- Obvious prompt-injection and SQL-like patterns are blocked
+- Routing separates image extraction from text reply paths
+
+## Known limitations
+
+- Session and verification state are in-memory (lost on server restart).
+- Auth is demo-oriented: the verification code may be returned in the API response.
+- Receipt auto-processing is fixed to a single configured number.
+- No multi-user tenant isolation beyond current tenant/sub-tenant configuration.
+- No background job queue; processing is request- and watcher-driven.
+
+## Testing
+
+```bash
+npm test
+```
+
+Tests focus on intake routing and guardrail behavior.
+
+## Hackathon framing
+
+Snap Tax is a concrete **agentic workflow over personal data**: multimodal intake (iMessage image) → structured extraction (LLM) → durable memory (HydraDB) → retrieval and answers (Q&A) → visible closure (dashboard and messaging). The differentiator is an operational pipeline in one flow, not a prototype UI alone.
